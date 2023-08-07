@@ -1,4 +1,4 @@
-# 数据集存放路径
+# 数据集存放路径，没有数据集会自动下载，但需要提前设置好data_path数据存放路径
 data_path: 'E:\JupyterProject\Fashion-MNIST\MINST-FASHION数据集\MINST-FASHION数据集'
 # 客户端数量
   # 设为1时则训练一个客户端
