@@ -1,0 +1,13 @@
+# 数据集存放路径
+data_path: 'E:\JupyterProject\Fashion-MNIST\MINST-FASHION数据集\MINST-FASHION数据集'
+# 客户端数量
+  # 设为1时则训练一个客户端
+  # 客户端数量应能被特征数整除，fashion-mnist的特征数为28*28
+client_num: 2
+# 采样比例
+sample_rate: 0.8
+# 超参数
+lr: 0.15
+epochs: 3
+bs: 128
+gamma: 0
