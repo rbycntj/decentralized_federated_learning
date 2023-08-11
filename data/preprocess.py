@@ -1,33 +1,50 @@
-import torch
+from torch.utils.data import random_split
+from torch.utils.data import TensorDataset
 import random
+import torch
 
 """
     fashion-mnist数据集预处理
+    主要任务：给不同客户端随机划分样本数据
 """
 
 
-def fashion_mnist_preprocess(mnist, pieces_num, sample_rate=0.8):
-    # 获取mnist数据集的样本
-    mnist_data = mnist.data
-    # 获取样本数量与特征数量，在这里将图片每个像素展平，每个像素点为一个特征
-    samples_num = mnist_data.shape[0]
-    features_num = mnist_data.shape[1] * mnist_data.shape[2]
-    # 转变数据集形状为[60000,784]
-    mnist_data = mnist_data.reshape(samples_num, features_num)
-    # 获取样本标签 将形状变为[60000,1]
-    mnist_targets = mnist.targets.reshape(samples_num, 1)
-    # 深拷贝多份数据样本
-    pieces_mnist_data = tuple([mnist_data.clone() for i in range(pieces_num)])
-    # 首部添加唯一标识列，用于区分不同样本 尾部添加真实标签
-    ids = torch.arange(1, samples_num + 1).reshape(samples_num, 1)
-    pieces_data = []
-    for piece_mnist_data in pieces_mnist_data:  # 循环为每个数据都加一列id
-        pieces_data.append(torch.cat((torch.cat((ids, piece_mnist_data), dim=1), mnist_targets), dim=1))
-    # 为每个client的数据选取4/5的样本，用于实现样本id对其
+def fashion_mnist_preprocess(mnist, client_num: int, sample_rate: float = 0.8):
+    # 为每个client的数据选取sample_rate的样本作为各自数据集，为横向联邦做准备
     clients_data = []
-    for piece_data in pieces_data:
-        # 采样
-        sample_index = random.sample(range(samples_num), int(float(sample_rate) * samples_num))
-        client_data = torch.index_select(piece_data, dim=0, index=torch.IntTensor(sample_index))
-        clients_data.append(client_data)
+    # per_samples_num随机采样数据量,per_others_num剩下未被采样的数据量
+    per_samples_num = int(sample_rate * len(mnist))
+    per_others_num = len(mnist) - per_samples_num
+    # 循环为每个客户端采样
+    for i in range(client_num):
+        # 采样，当前客户端最终获得per_samples_num大小的数据集
+        mnist_data, other_data = random_split(mnist, [per_samples_num, per_others_num])
+        clients_data.append(mnist_data)
     return clients_data
+
+
+"""
+    boston-data数据集预处理
+"""
+
+
+def boston_data_preprocess(boston_data, client_num: int, sample_rate: float = 0.8):
+    samples, targets = boston_data
+    # 为每个client的数据选取sample_rate的样本作为各自数据集
+    clients_data = []
+    clients_data_tmp = []
+    # 每个client分per_data个特征
+    per_data = len(samples[0]) / client_num
+    # 循环为每个客户端分割特征
+    for i in range(client_num):
+        clients_data_tmp.append((samples[:, int(i * per_data):int((i + 1) * per_data)], targets))
+    # 循环为每个客户端采样
+    for i in range(client_num):
+        # 采样，当前客户端最终获得per_samples_num大小的数据集
+        sample_index = random.sample(range(len(samples)), int(sample_rate * len(samples)))
+        tmp_samples = torch.index_select(clients_data_tmp[i][0], dim=0, index=torch.IntTensor(sample_index))
+        tmp_targets = torch.index_select(clients_data_tmp[i][1], dim=0, index=torch.IntTensor(sample_index))
+        # 合并为dataset
+        dataset = TensorDataset(tmp_samples, tmp_targets)
+        clients_data.append((dataset, sample_index))  # sample_index用于纵向联邦求交
+    return clients_data, int(per_data)
