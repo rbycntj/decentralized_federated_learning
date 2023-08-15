@@ -11,8 +11,8 @@ import os
     纵向联邦学习：
     1.获取Boston数据集
     2.为每个客户端划分数据集的特征，每个客户端拥有不同的特征值
-    3.为客户端分配邻居节点，用于梯度数据的更新
-        代码中使用”环形“结构 [0->1->2->3->..->n->0] 0的邻居为1和n
+    3.为客户端分配邻居节点，用于wx数据的更新
+        代码中使用”全连接“结构
     4.开始训练
         4.1 每个batch先进行正向传播与反向传播
         4.2 更新各自梯度信息
@@ -56,11 +56,9 @@ if __name__ == '__main__':
     # 配置公钥分发给哪个client 这里分发给下一个客户端 [0->1->2->3->..->n->0]
     for index, client in enumerate(clients):
         client.next_client = clients[(index + 1) % len(clients)]
-    # 环形连接 [0->1->2->3->..->n->0]
-    for index, client in enumerate(clients):
-        pre = (index - 1 if index - 1 != -1 else len(clients) - 1)
-        pst = (index + 1 if index + 1 != len(clients) else 0)
-        client.neighbors = [clients[pre], clients[pst]]
+    # 全连接
+    for client in clients:
+        client.neighbors = [c for c in clients if c != client]
 
     # 5.发送公钥
     for client in clients:
@@ -102,4 +100,4 @@ if __name__ == '__main__':
     for y in y_list:
         plt.plot(x, y, marker='o', markersize=3)
     plt.legend(idx_list)  # 设置折线名称
-    plt.savefig(os.getcwd()+os.sep+'res'+os.sep+'vertical_res.png')
+    plt.savefig(os.getcwd() + os.sep + 'res' + os.sep + 'vertical_res_new.png')

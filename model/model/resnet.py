@@ -139,13 +139,8 @@ class ResNet(nn.Module):
     """
 
     def __init__(self, block: Type[Union[ResidualUnit, BottleNeck]], layers_blocks_num: list[int], num_classes: int,
-                 lr: int, epochs: int, bs: int, gamma: int):
+                 lr: int, epochs: int, local_epochs: int, bs: int, gamma: int):
         super().__init__()
-        # 设置训练用参数
-        self.lr = lr
-        self.epochs = epochs
-        self.bs = bs
-        self.gamma = gamma
 
         self.layer1 = nn.Sequential(
             nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),
@@ -164,6 +159,13 @@ class ResNet(nn.Module):
             self.fc = nn.Linear(512, num_classes)
         else:
             self.fc = nn.Linear(2048, num_classes)
+
+        # 设置训练用参数
+        self.lr = lr
+        self.epochs = epochs
+        self.local_epochs = local_epochs
+        self.bs = bs
+        self.gamma = gamma
 
     def forward(self, x):
         x = self.layer1(x)

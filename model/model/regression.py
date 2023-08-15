@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class BostonModel(nn.Module):
-    def __init__(self, in_features, out_features, lr, epochs, bs, gamma):
+    def __init__(self, in_features: int, out_features: int, lr: float, epochs: int, bs: int, gamma: float):
         super().__init__()
         # 训练基础信息
         self.lr = lr

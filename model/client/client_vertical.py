@@ -1,12 +1,12 @@
+import time
+
 import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import DataLoader
 from cryptography.hazmat.primitives.asymmetric import rsa
 import random
-import numpy as np
 from utlis.hash_utils.full_domain_hash import hash_with_hmac
-from model.model.resnet import ResNet
 
 
 # 定义Client类
@@ -33,13 +33,14 @@ class Client(object):
         self.public_keys = {}  # 存储其他客户端公钥
 
         # 训练用参数
-        self.grads = {}  # 存储邻居梯度
-        self.list_my_grads = []  # 存储当前客户端的梯度值
+        self.sigmas = {}  # 存储邻居梯度
         self.iter = 1  # 存储当前迭代次数，保证各client同步
 
         # 交集数据id
         self.inter_ids = client_data[1]  # list型
         self.inter_idx = [x for x in range(len(self.inter_ids))]
+        self.map = dict(zip(self.inter_ids, self.inter_idx))
+        self.select_index = [x for x in range(len(self.inter_ids))]  # 求交结束后最真实的数据在data中的索引
 
         # 生成公钥与私钥
         # 1.1生成私钥
@@ -124,9 +125,11 @@ class Client(object):
     # 根据求交结果截取出训练所用的数据集
     def get_true_data(self):
         print("{}-client after_inter_data number:{}".format(self.idx, len(self.inter_ids)))
-        self.inter_idx = sorted(self.inter_idx)
+        self.select_index = [value for key, value in self.map.items() if key in self.inter_ids]
+        self.select_index = sorted(self.select_index)
+
         # 取子集
-        subset = torch.utils.data.Subset(self.data, self.inter_idx)
+        subset = torch.utils.data.Subset(self.data, self.select_index)
         self.batch_data = DataLoader(subset, batch_size=self.net.bs, shuffle=False)
 
     # 模型训练
@@ -141,6 +144,7 @@ class Client(object):
         # 检查邻居数量
         self.neighbors = list(set([neighbor for neighbor in self.neighbors if neighbor != self]))
         self.neighbors_num = len(self.neighbors)
+
         # 损失函数
         criterion = nn.MSELoss()
 
@@ -150,49 +154,51 @@ class Client(object):
         samples = 0  # 循环开始之前，模型一个样本都没出现过
         times = 0  # 记录次数，用于画图
         r_squared_list = []  # 记录r_squared，用于画图
+
         for epoch in range(epochs):
             for batch_idx, (x, y) in enumerate(batch_data):
                 y = y.view(x.shape[0]).to(self.device)  # 降维 y必须为1维
                 x = x.to(self.device)
-                sigma = self.net.forward(x)  # 正向传播
+
+                # 正向传播
+                sigma = self.net.forward(x)
+                self.sigma_data = sigma.clone().data
+
+                # 1.阻塞等待其他邻居的iter次数相同
+                self.wait_iter()
+                # 2.将自己sigma发送给邻居
+                self.send_sigma_to_neighbor(self.neighbors)
+                # 3.阻塞等待邻居节点发送sigma
+                self.wait_sigmas()
+                # 4.更新sigma
+                self.update_sigma(sigma)
+
+                # 计算损失
                 loss = criterion(sigma, y.reshape(-1, 1))
                 # 反向传播得到梯度
                 loss.backward()
 
-                # 要获取邻居节点的梯度，进行相加
-                # 1.获取目前自己的梯度
-                for my_grad in self.net.parameters():
-                    self.list_my_grads.append(my_grad.grad)
-                # 2.阻塞等待其他邻居的iter次数相同
-                self.wait_iter()
-                # 3。将自己的梯度发送给邻居
-                self.send_grads_to_neighbor(self.neighbors)
-                # 4.阻塞等待邻居节点发送梯度
-                self.wait_grad()
-                # 5.更新梯度
-                self.update_grads()
-
                 # 梯度下降
                 opt.step()
                 opt.zero_grad()
-
-                # 监督进度
                 samples += x.shape[0]
-                if (batch_idx + 1) % 5 == 0 or batch_idx == len(batch_data) - 1:
-                    times += 1
-                    r_squared = self.r_squared(y.reshape(-1, 1), sigma.reshape(-1, 1))
-                    r_squared_list.append(r_squared.to(torch.device('cpu')).detach().numpy())
-                    print("{}-client Epoch{}:[{}/{}({:.0f})%]  Loss:{:.6f},R-Squared:{:.3f}".format(
-                        self.idx,
-                        epoch + 1,
-                        samples,
-                        epochs * len(batch_data.dataset),
-                        100 * samples / (epochs * len(batch_data.dataset)),
-                        loss.data.item(),
-                        r_squared  # 使用r-squared判断准确率
-                    ))
                 self.iter += 1
-        return times, r_squared_list,self.idx
+
+            # 监督进度
+            times += 1
+            r_squared = self.r_squared(y.reshape(-1, 1), sigma.reshape(-1, 1))
+            r_squared_list.append(r_squared.to(torch.device('cpu')).detach().numpy())
+            print("{}-client Epoch{}:[{}/{}({:.0f})%]  Loss:{:.6f},R-Squared:{:.3f}".format(
+                self.idx,
+                epoch + 1,
+                samples,
+                epochs * len(batch_data.dataset),
+                100 * samples / (epochs * len(batch_data.dataset)),
+                loss.data.item(),
+                r_squared  # 使用r-squared判断准确率
+            ))
+
+        return times, r_squared_list, self.idx
 
     # R-Squared
     def r_squared(self, y_true, y_pred):
@@ -202,19 +208,19 @@ class Client(object):
         r2 = 1 - (ss_residual / ss_total)
         return r2
 
-    # 将梯度发送给邻居client
-    def send_grads_to_neighbor(self, neighbors):
+    # 将权重发送给邻居client
+    def send_sigma_to_neighbor(self, neighbors):
         for neighbor in neighbors:
-            neighbor.receive_grads_from_neighbor(self.idx, self.list_my_grads)
+            neighbor.receive_sigma_from_neighbor(self.idx, self.sigma_data)
 
     # 从邻居节点接受梯度
-    def receive_grads_from_neighbor(self, idx, grads):
-        self.grads[idx] = grads
+    def receive_sigma_from_neighbor(self, idx, sigma_data):
+        self.sigmas[idx] = sigma_data
 
     # 等待接受梯度
-    def wait_grad(self):
+    def wait_sigmas(self):
         while True:
-            if len(self.grads) != self.neighbors_num:
+            if len(self.sigmas) != self.neighbors_num:
                 continue
             else:
                 break
@@ -232,20 +238,10 @@ class Client(object):
                 continue
 
     # 更新梯度
-    def update_grads(self):
-        my_grads = self.list_my_grads
-        # 先求和
-        for key, value in self.grads.items():
-            # print("{}号client使用{}号邻居的梯度进行更新======".format(self.idx,key))
-            for index, grad in enumerate(value):
-                if my_grads[index] != None:
-                    my_grads[index].data = my_grads[index].data + grad.data
-        if self.neighbors_num != 0:
-            # 再做除法
-            for my_grad in my_grads:
-                if my_grad != None:
-                    my_grad.data = my_grad.data / (self.neighbors_num + 1)
-                    # my_grad.data = my_grad.data
+    def update_sigma(self, sigma):
+        # 求和
+        for key, value in self.sigmas.items():
+            sigma.data += value
+        sigma.data = sigma.data / (self.neighbors_num + 1)
         # 清空
-        self.grads = {}
-        self.list_my_grads = []
+        self.sigmas = {}

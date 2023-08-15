@@ -26,13 +26,13 @@ def train(client: Client):
 
 
 if __name__ == '__main__':
-
     # 1.加载配置文件并获取配置信息
     config = read_yaml('horizontal_fl')
     data_path = config['data_path']
     client_num = config['client_num']
     lr = config['lr']
     epochs = config['epochs']
+    local_epochs = config['local_epochs']
     bs = config['bs']
     gamma = config['gamma']
     sample_rate = config['sample_rate']
@@ -64,7 +64,7 @@ if __name__ == '__main__':
         2.根据论文填写第二个参数层次[layer1,layer2...]
     """
     clients = [
-        Client(clients_data[i], ResNet(ResidualUnit, [2, 2, 2, 2], 10, lr, epochs, bs, gamma), i) for i in
+        Client(clients_data[i], ResNet(ResidualUnit, [2, 2, 2, 2], 10, lr, epochs, local_epochs, bs, gamma), i) for i in
         range(client_num)]
 
     # 5.为每个client分配邻居节点，这里采用环形连接 [0->1->2->3->4->0]
@@ -103,7 +103,7 @@ if __name__ == '__main__':
     for y in y_list:
         plt.plot(x, y, marker='o', markersize=3)
     plt.legend(idx_list)  # 设置折线名称
-    plt.savefig(os.getcwd() + os.sep + 'res' + os.sep + 'horizontal_loss_res.png')
+    plt.savefig(os.getcwd() + os.sep + 'res' + os.sep + 'horizontal_loss_res_new.png')
 
     # 7.2 accuracy图
     plt.figure(2)
@@ -118,4 +118,4 @@ if __name__ == '__main__':
     for y in y_list:
         plt.plot(x, y, marker='o', markersize=3)
     plt.legend(idx_list)  # 设置折线名称
-    plt.savefig(os.getcwd() + os.sep + 'res' + os.sep + 'horizontal_accuracy_res.png')
+    plt.savefig(os.getcwd() + os.sep + 'res' + os.sep + 'horizontal_accuracy_res_new.png')

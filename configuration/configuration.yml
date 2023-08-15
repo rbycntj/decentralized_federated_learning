@@ -9,8 +9,9 @@ horizontal_fl:
   # 采样比例
   sample_rate: 0.5
   # 超参数
-  lr: 0.015
+  lr: 0.01
   epochs: 50
+  local_epochs: 2 # FedAvg本地训练次数
   bs: 128
   gamma: 0
 
@@ -24,9 +25,9 @@ vertical_fl:
   # 客户端数量应能被特征数整除，fashion-mnist的特征数为28*28
   client_num: 3
   # 采样比例
-  sample_rate: 0.9
+  sample_rate: 1
   # 超参数
   lr: 0.015
-  epochs: 100
+  epochs: 500
   bs: 32
   gamma: 0
